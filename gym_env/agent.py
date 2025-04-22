@@ -1,5 +1,10 @@
 import numpy as np
 
+
+'''
+ESTA CLASE FUE CREADA PARA UN MODELO CONTINUO, ACTUALMENTE NO TIENE APLICACION      
+'''
+
 class AgentActions:
     def __init__(self, max_turn_angle=60, distances=[1, 2, 3]):
         """
