@@ -51,6 +51,8 @@ class RLContinuousEnv(gym.Env):
         self.window_size = 600  # Tamaño de la ventana cuadrada
         self.screen = None
         self.clock = None
+        self.previous_velocity = 0
+        self.change_cont = 0
     
     def _get_obs(self):
         return {
@@ -64,14 +66,19 @@ class RLContinuousEnv(gym.Env):
         super().reset(seed=seed)
         
         # Posición aleatoria del robot
-        # self.state = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
-        self.state = np.array([0,0,0]).astype(np.float64)
+        self.state = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
+        # self.state = np.array([0,0,0]).astype(np.float64)
         # self.state = np.array([1.9245576, -7.2271757, -178.94264]).astype(np.float64)
         if np.isnan(self.state).any():
             print("SE HA CREADO MAL EL ESTADO")
         # Definir una meta aleatoria dentro del espacio
-        self.goal = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
-        
+        # self.goal = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
+        x = 0.0
+        y = 0.0
+        theta = self.np_random.uniform(self.xmin[2], self.xmax[2])
+        self.goal = np.array([x, y, theta], dtype=np.float64)
+        self.change_cont = 0
+        self.changed_direction = False
         if self.render_mode == "human":
             self.render()
         self.previous_action = np.array([0.0,0.0]).astype(np.float64)
@@ -82,7 +89,10 @@ class RLContinuousEnv(gym.Env):
 
     def step(self, action):
         """ Ejecuta una acción y actualiza el estado. """
+        reward = -0.1
         self.current_step += 1
+
+        # Interpretar acción
         if action[0] > 0:
             velocity = 8
         elif action[0] < 0:
@@ -90,61 +100,49 @@ class RLContinuousEnv(gym.Env):
         else:
             velocity = 0
         angle = action[1] * self.max_angle
-        if np.isnan(self.state).any():
-            print("Accion actual: ", action)
 
-        prev_state = self.state.copy()  # Guardar el estado anterior
+        # Inicializar velocidad previa si no existe
+        if not hasattr(self, "previous_velocity"):
+            self.previous_velocity = 0
+
+        # Detectar cambio de dirección
+        self.changed_direction = (np.sign(velocity) != np.sign(self.previous_velocity)) and (velocity != 0 and self.previous_velocity != 0)
+        if (self.changed_direction):
+            reward-=2
+                
+        # Guardar el estado previo
+        prev_state = self.state.copy()
+
+        # Simular movimiento
         pos_final, tiempo = self._simulate_motion(self.state, velocity, angle)
+
         if np.isnan(pos_final).any():
             print("Accion actual: ", action)
-        # Guardar estado previo y actualizar estado
-        
-        
-        
+
         self.state = pos_final
 
-        # Calcular recompensa basada en distancia y orientación
+        # Guardar nueva velocidad para el siguiente paso
+        self.previous_velocity = velocity
+
+        # Calcular recompensa basada en la distancia y orientación
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
+        if distance_to_goal < self.last_distance_to_goal:
+            reward += 1
         self.last_distance_to_goal = distance_to_goal
+
         distance_compare = distance_to_goal
         near_threshold = 2
+
         if np.isnan(distance_to_goal):
             print("Estado (self.state):", self.state)
             print("Meta (self.goal):", self.goal)
-        
-        movement_vector = self.state[:2] - prev_state[:2]
-        goal_vector = self.goal[:2] - self.state[:2]
 
-    # Normalizar vectores si su norma es mayor que 0
-        if np.linalg.norm(movement_vector) > 0:
-            movement_vector = movement_vector / np.linalg.norm(movement_vector)
-        if np.linalg.norm(goal_vector) > 0:
-            goal_vector = goal_vector / np.linalg.norm(goal_vector)
-        alignment_penalty = 0
         angle_diff = self.goal[2] - self.state[2]
         angle_diff = (angle_diff + 180) % 360 - 180
-        alignment_penalty = np.dot(movement_vector, goal_vector)  # Máximo +1 si se mueve hacia la meta
-        # Evitar división por cero
-        norm_movement = np.linalg.norm(movement_vector)
-        norm_goal = np.linalg.norm(goal_vector)
 
-        if norm_movement > 0 and norm_goal > 0:
-            cos_angle = np.clip(np.dot(movement_vector, goal_vector) / (norm_movement * norm_goal), -1.0, 1.0)
-            angle_between_rad = np.arccos(cos_angle)  # en radianes
-            angle_between_deg = np.degrees(angle_between_rad)  # 🔁 en grados
-        else:
-            angle_between_deg = np.pi  # Máximo desalineado si algún vector es nulo
-
-        alignment_penalty = - (angle_between_deg / 180.0)  # de 0 a -0.01
-        distance_to_goal = distance_to_goal
-        # alignment_penalty = alignment_penalty*0.01
-        # Recompensa total
-
-        # print(alignment_penalty)
-        reward = -distance_to_goal + alignment_penalty - tiempo*5 # tiempo tiene un valor constante de 0.1
-        if distance_compare < 0.1 and abs(angle_diff) < 5:
+        if distance_compare < 0.2 and abs(angle_diff) < 5:
             done = True
-            reward += 10
+            reward += 50
             print("GOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOAL")
             print(self.state)
             print(self.goal)
@@ -152,35 +150,50 @@ class RLContinuousEnv(gym.Env):
             done = True
             self.state = prev_state
             reward += -10
-        elif self.current_step > self.max_steps:
-            done = True
-            reward += -10
         else:
             done = False
+
         self.previous_action = action
         obs = self._get_obs()
 
         return obs, reward, done, False, {}
 
     def _simulate_motion(self, state, velocity, angle):
-        """ Simula el movimiento basado en la velocidad y el ángulo de giro. """
+        """Simula el movimiento basado en la velocidad y el ángulo de giro, con ruido de SLAM y ruedas locas."""
         dt = 0.05
         axis_distance = 1
         theta_in = np.radians(state[2])
         new_state = state.copy()
-        new_state[0] = state[0] + (dt * velocity * np.cos(np.radians(new_state[2])) * np.cos(np.radians(angle)))
-        new_state[1] = state[1] + (dt * velocity * np.sin(np.radians(new_state[2])) * np.cos(np.radians(angle)))
-       
-       
+
+        # Movimiento sin ruido
+        new_state[0] = state[0] + (dt * velocity * np.cos(theta_in) * np.cos(np.radians(angle)))
+        new_state[1] = state[1] + (dt * velocity * np.sin(theta_in) * np.cos(np.radians(angle)))
+        
+        # Actualización de orientación
         theta_f = theta_in + (dt * velocity * np.sin(np.radians(angle)) / axis_distance)
-        new_state[2] = np.degrees(theta_f)
-        # Asegurar que la orientación se mantiene en [-180, 180]
+        new_theta = np.degrees(theta_f)
+
+        # --- Ruido SLAM en posición (x, y) ---
+        pos_noise_std = 0.01  # 1 cm
+        new_state[0] += self.np_random.normal(0, pos_noise_std)
+        new_state[1] += self.np_random.normal(0, pos_noise_std)
+
+        # --- Ruido por ruedas locas en orientación ---
+        if self.changed_direction:
+            angle_noise = self.np_random.normal(0, 1)  # más ruido si cambió de dirección
+        else:
+            angle_noise = self.np_random.normal(0, 0.3)  # poco ruido si no
+
+        new_state[2] = new_theta + angle_noise
+
+        # Normalizar orientación a [-180, 180]
         if new_state[2] > 180:
             new_state[2] -= 360
         elif new_state[2] < -180:
             new_state[2] += 360
-        
+
         return new_state, dt
+
 
     # def render(self, mode="human"):
     #     print(f"Estado actual: x={self.state[0]}, y={self.state[1]}, theta={self.state[2]}")
@@ -238,9 +251,9 @@ class RLContinuousEnv(gym.Env):
 #     step_count = 0
 
 #     while not done and step_count < 10000:
-#         action = [1,1]
+#         action = env.action_space.sample()
 #         obs, reward, done, _, _ = env.step(action)
-#         print(obs)
+#         print(done)
 #         print("Accion tomada: ", action )
 #         env.render()
 #         print(step_count)

@@ -4,18 +4,63 @@ import matplotlib.pyplot as plt
 import random
 import pickle
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.env_util import make_vec_env
+
 import os
 import my_robotenv
+from stable_baselines3.common.callbacks import BaseCallback
 
+NUM_ENVS = 8
 
+class TrainAndLogCallback(BaseCallback):
+    def __init__(self, check_freq, save_path, start_steps=0, verbose=1):
+        super(TrainAndLogCallback, self).__init__(verbose)
+        self.check_freq = check_freq
+        self.save_path = save_path
+        self.start_steps = start_steps
 
-def make_env(rank):
-    def _init():
-        env = gym.make("my_robotenv-v1")
-        env.reset(seed=rank)
-        return env
-    return _init
+    def _init_callback(self):
+        # Creamos la carpeta de guardado si no existe.
+        if self.save_path is not None:
+            os.makedirs(self.save_path, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        # Guardamos el modelo cada check_freq pasos.
+        if self.n_calls % self.check_freq == 0:
+            if self.save_path is not None:
+                self.model.save(os.path.join(self.save_path, "model_{}".format(self.n_calls + int(self.start_steps))))
+        return True
+
+#TODO: (Opcional) Implementad otros callbacks si lo considerais necesario.
+
+from typing import Callable
+
+def linear_schedule(initial_value: float) -> Callable[[float], float]:
+    """
+    Linear learning rate schedule.
+
+    :param initial_value: Initial learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+
+        :param progress_remaining:
+        :return: current learning rate
+        """
+        return progress_remaining * initial_value
+
+    return func
+
+# def make_env(rank):
+#     def _init():
+#         env = gym.make("my_robotenv-v1")
+#         env.reset(seed=rank)
+#         return env
+#     return _init
 
 def train_dqn():
     model_dir = "models"
@@ -24,22 +69,32 @@ def train_dqn():
     os.makedirs(log_dir, exist_ok=True)
 
     # Vectorización con 32 entornos
-    env = SubprocVecEnv([make_env(i) for i in range(16)])
+    env = make_vec_env(
+        "my_robotenv-v1",
+        n_envs=NUM_ENVS,
+        vec_env_cls=DummyVecEnv, # Puede ser DummyVecEnv o SubprocVecEnv. Cambiadlo en base a vuestra CPU y analisis de rendimiento.
+        monitor_dir="./monitor_dir/",
+        seed=33,
+    )
 
     model = PPO(
         policy="MultiInputPolicy",
         env=env,
         verbose=1,
         tensorboard_log=log_dir,
-        device="cuda"
+        device="cuda",
+        learning_rate=linear_schedule(3e-4),
+        batch_size=128,
+        n_steps= 4096
     )
 
-    TIMESTEPS = 1000000
+    total_timesteps = 2.4e6
     iters = 0
-    while True:
-        iters += 1
-        model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False)
-        model.save(f"{model_dir}/ppo_{TIMESTEPS*iters}")
+    cb = TrainAndLogCallback(check_freq=10000, save_path="./mario_models/", start_steps=0, verbose=1)
+
+    iters += 1
+    model.learn(total_timesteps=total_timesteps, callback=cb)
+    model.save(f"{model_dir}/ppo_1")
 
 
 def test_dqn():
@@ -61,10 +116,10 @@ def test_dqn():
     total_reward = 0
 
     while not done:
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs)
         print("Accion tomada: ", action)
         obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
+        done = terminated
         total_reward += reward
         if hasattr(env, "render"):
             env.render()
