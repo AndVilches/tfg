@@ -52,6 +52,7 @@ class RLContinuousEnv(gym.Env):
         self.screen = None
         self.clock = None
         self.previous_velocity = 0
+        self.previous_angle = 180
         self.change_cont = 0
     
     def _get_obs(self):
@@ -72,11 +73,12 @@ class RLContinuousEnv(gym.Env):
         if np.isnan(self.state).any():
             print("SE HA CREADO MAL EL ESTADO")
         # Definir una meta aleatoria dentro del espacio
-        # self.goal = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
-        x = 0.0
-        y = 0.0
-        theta = self.np_random.uniform(self.xmin[2], self.xmax[2])
-        self.goal = np.array([x, y, theta], dtype=np.float64)
+        self.goal = self.np_random.uniform(self.xmin, self.xmax).astype(np.float64)
+        # x = 0.0
+        # y = 0.0
+        self.previous_angle = 180
+        # theta = self.np_random.uniform(self.xmin[2], self.xmax[2])
+        # self.goal = np.array([x, y, theta], dtype=np.float64)
         self.change_cont = 0
         self.changed_direction = False
         if self.render_mode == "human":
@@ -89,7 +91,7 @@ class RLContinuousEnv(gym.Env):
 
     def step(self, action):
         """ Ejecuta una acción y actualiza el estado. """
-        reward = -0.1
+        reward = -1
         self.current_step += 1
 
         # Interpretar acción
@@ -108,8 +110,11 @@ class RLContinuousEnv(gym.Env):
         # Detectar cambio de dirección
         self.changed_direction = (np.sign(velocity) != np.sign(self.previous_velocity)) and (velocity != 0 and self.previous_velocity != 0)
         if (self.changed_direction):
-            reward-=2
-                
+            self.change_cont+=1
+            if(self.change_cont > 2):
+                reward-=2
+        else:
+            self.change_cont = 0
         # Guardar el estado previo
         prev_state = self.state.copy()
 
@@ -123,7 +128,6 @@ class RLContinuousEnv(gym.Env):
 
         # Guardar nueva velocidad para el siguiente paso
         self.previous_velocity = velocity
-
         # Calcular recompensa basada en la distancia y orientación
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
         if distance_to_goal < self.last_distance_to_goal:
@@ -139,20 +143,23 @@ class RLContinuousEnv(gym.Env):
 
         angle_diff = self.goal[2] - self.state[2]
         angle_diff = (angle_diff + 180) % 360 - 180
+        if(abs(angle_diff) < abs(self.previous_angle)):
+            reward+=0.5
 
         if distance_compare < 0.2 and abs(angle_diff) < 5:
             done = True
-            reward += 50
+            reward += 100
             print("GOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOAL")
             print(self.state)
             print(self.goal)
         elif np.any(self.state < self.xmin) or np.any(self.state > self.xmax):
             done = True
             self.state = prev_state
-            reward += -10
+            reward += -30
         else:
             done = False
 
+        self.previous_angle = angle_diff
         self.previous_action = action
         obs = self._get_obs()
 

@@ -6,7 +6,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import my_robotenv  # Asegúrate de que importa tu entorno personalizado
 
 # Ruta al modelo entrenado
-MODEL_PATH = "mario_models/model_110000.zip"
+MODEL_PATH = "mario_models/model_1250000.zip"
 
 # Crear el entorno
 def make_env():
@@ -21,7 +21,7 @@ env = DummyVecEnv([make_env])
 
 # Número de episodios de test
 num_episodes = 10
-
+steps = 0
 for ep in range(num_episodes):
     obs = env.reset()  # reset() devuelve una tupla (obs, info)
     done = False
@@ -29,14 +29,15 @@ for ep in range(num_episodes):
     trajectory = []
 
     while not done:
-        action, _states = model.predict(obs, deterministic=True)
+        steps+=1
+        action, _states = model.predict(obs)
         obs, reward, terminated, truncated = env.step(action)
-        print(terminated)
+        # print(terminated)
         done = terminated
         total_reward += reward
         if hasattr(env, "render"):
             env.render()
-    
+        print(steps)
     print("SALE DEL BUCLE")
         # trajectory.append(obs[0][:2])  # Guardar posición x, y para graficar (ajusta si quieres más)
 

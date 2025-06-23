@@ -85,10 +85,11 @@ def train_dqn():
         device="cuda",
         learning_rate=linear_schedule(3e-4),
         batch_size=128,
-        n_steps= 4096
+        n_steps= 2048,
+        n_epochs=5
     )
 
-    total_timesteps = 2.4e6
+    total_timesteps = 1e7
     iters = 0
     cb = TrainAndLogCallback(check_freq=10000, save_path="./mario_models/", start_steps=0, verbose=1)
 
@@ -130,3 +131,56 @@ def test_dqn():
 if __name__=="__main__":
     train_dqn()
     # test_dqn()
+
+'''
+Nota con el problema que me pasa, después de todos los timesteps parado hace esto
+
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 2.17e+03    |
+|    ep_rew_mean          | 1.18e+03    |
+| time/                   |             |
+|    fps                  | 1607        |
+|    iterations           | 405         |
+|    time_elapsed         | 4126        |
+|    total_timesteps      | 6635520     |
+| train/                  |             |
+|    approx_kl            | 0.013951356 |
+|    clip_fraction        | 0.179       |
+|    clip_range           | 0.2         |
+|    entropy_loss         | 1.94        |
+|    explained_variance   | 0.956       |
+|    learning_rate        | 0.000101    |
+|    loss                 | 0.0948      |
+|    n_updates            | 2020        |
+|    policy_gradient_loss | 0.00848     |
+|    std                  | 0.0914      |
+|    value_loss           | 0.157       |
+-----------------------------------------
+GOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOAL
+[  0.05231452  -0.12063797 -30.76319193]
+[  0.          0.        -29.8484979]
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 7.42e+03    |
+|    ep_rew_mean          | 4.43e+03    |
+| time/                   |             |
+|    fps                  | 1608        |
+|    iterations           | 406         |
+|    time_elapsed         | 4136        |
+|    total_timesteps      | 6651904     |
+| train/                  |             |
+|    approx_kl            | 0.023244567 |
+|    clip_fraction        | 0.185       |
+|    clip_range           | 0.2         |
+|    entropy_loss         | 1.95        |
+|    explained_variance   | 0.952       |
+|    learning_rate        | 0.000101    |
+|    loss                 | 0.0884      |
+|    n_updates            | 2025        |
+|    policy_gradient_loss | 0.00777     |
+|    std                  | 0.0911      |
+|    value_loss           | 0.173       |
+-----------------------------------------
+
+'''
